@@ -2,14 +2,32 @@
 
 Your application consists of three main parts:
 1.  **Frontend**: React + Vite (hosted on Vercel)
-2.  **Backend**: Fastify + Node.js (hosted on Heroku)
+2.  **Backend**: Fastify + Node.js (hosted on Railway)
 3.  **Database & Storage**: Supabase (PostgreSQL & Object Storage)
 
 ---
 
 ## ☁️ Deploying the Backend Server
 
-You can deploy the contents of the `server/` directory to **Heroku**, **Railway**, **Render**, or **Fly.io**. Below are instructions for Heroku.
+The backend server is hosted on **Railway** (project: `angelic-joy`, service: `Evergreeners-web`).
+
+### Railway Configuration
+
+1.  **Repository Connection**: Connected to GitHub repo `evergreeners/Evergreeners-web` on the `main` branch.
+2.  **Root Directory**: Configured to `server`.
+3.  **Build Command**: `npm run build`
+4.  **Start Command**: `npm run db:migrate && npm start`
+5.  **Environment Variables**:
+    *   `DATABASE_URL`: Supabase Transaction Pooler URL (port 6543).
+    *   `BETTER_AUTH_SECRET`: Better Auth session signing secret.
+    *   `BETTER_AUTH_URL`: Frontend URL (`https://evergreeners.dev`).
+    *   `ALLOWED_ORIGINS`: Comma-separated allowed origins (`https://evergreeners.dev,https://www.evergreeners.dev,https://evergreeners.vercel.app,http://localhost:8080`).
+    *   `APP_URL`: Frontend application URL (`https://evergreeners.dev`).
+    *   `GITHUB_CLIENT_ID` & `GITHUB_CLIENT_SECRET`: GitHub OAuth App credentials.
+    *   `RESEND_API_KEY` & `EMAIL_FROM`: Resend email API credentials.
+    *   `GEMINI_API_KEY`: Google Generative AI API key for intelligence reports.
+    *   `SUPABASE_URL` & `SUPABASE_SERVICE_ROLE_KEY`: Supabase project URL and service role key for storage uploads.
+    *   `NODE_ENV`: `production`
 
 ### Option 1: Heroku (Recommended)
 
@@ -60,23 +78,30 @@ To support community image uploads, you must create a storage bucket in Supabase
 ---
 
 ## 🔗 Connecting Frontend to Backend
-
-Once your backend is live on Heroku (e.g., `https://evergreeners-backend-2f9624f97235.herokuapp.com`), you need to route requests from your frontend:
-
-1.  Open your project's [vercel.json](file:///home/adam/Projects/Evergreeners-main/vercel.json).
-2.  Update the destination for `/api/(.*)` rewrites to point to your Heroku app:
-    ```json
-    {
-      "rewrites": [
-        {
-          "source": "/api/(.*)",
-          "destination": "https://<your-heroku-app-name>.herokuapp.com/api/$1"
-        },
-        ...
-      ]
-    }
-    ```
-3.  Commit and push this change to your main branch on GitHub to trigger a frontend redeployment on Vercel.
+ 
+ Once your backend is live on Railway (`https://evergreeners-web-production.up.railway.app`), route requests from your frontend:
+ 
+ 1.  Open your project's [vercel.json](file:///home/adam/Projects/Evergreeners-main/vercel.json).
+ 2.  Update the destination for `/api/(.*)` rewrites to point to your Railway app:
+     ```json
+     {
+       "rewrites": [
+         {
+           "source": "/api/(.*)",
+           "destination": "https://evergreeners-web-production.up.railway.app/api/$1"
+         },
+         {
+           "source": "/learn-git-branching/:path*",
+           "destination": "https://evergreeners-web-production.up.railway.app/learn-git-branching/:path*"
+         },
+         {
+           "source": "/(.*)",
+           "destination": "/index.html"
+         }
+       ]
+     }
+     ```
+ 3.  Commit and push this change to your main branch on GitHub to trigger a frontend redeployment on Vercel.
 
 ---
 
