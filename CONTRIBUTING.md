@@ -117,6 +117,8 @@ git status                 # should be clean on main
 
 ## 2. Evergreeners automation integration (Hack Club-style onboarding)
 
+> For the comprehensive architecture specification, implementation details, and roadmap, see [`docs/community-onboarding-plan.md`](./docs/community-onboarding-plan.md).
+
 Goal: web signup → GitHub org invite → first PR → streak tracking.
 Modeled on Hack Club's `draw-dino` → `hackclub/dinosaurs` flow.
 

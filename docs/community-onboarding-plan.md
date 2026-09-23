@@ -343,3 +343,54 @@ export const OrgInviteBanner: React.FC<{ username: string }> = ({ username }) =>
 };
 ```
 
+---
+
+## 4. Lifecycle Management, Safety & Rate Limits
+
+### A. 7-Day Expiration & Auto Re-Invite
+GitHub organization invitations expire after 7 days. If a Gardener logs in after an invite has expired:
+1. When checking `/api/user/org-membership-status`:
+   - If user is neither `active` nor has a pending invitation, the backend automatically triggers `octokit.rest.orgs.setMembershipForUser`.
+   - The user receives a fresh email and the banner remains active.
+
+### B. Rate Limiting & Abuse Prevention
+* **GitHub API Limits**:
+  - Free organizations are limited to **50 pending invitations** at any given time (up to 500 for verified educational or sponsored organizations).
+  - Calling `PUT /orgs/{org}/memberships/{username}` is idempotent.
+* **Mitigation**:
+  - Store `org_invite_status` (`invited`, `active`, `failed`) and `org_invited_at` in the database to prevent duplicate API dispatches on every login.
+  - Wrap Octokit calls in a try-catch block that gracefully logs rate limits (HTTP 403 / 429) without blocking user authentication or signup flows.
+
+### C. Access Control & Permission Isolation
+* In line with Hack Club's model, new Gardeners invited to `@evergreeners` are assigned the **Member** base role (never Owner or Billing Manager).
+* By default, Member base permissions on the organization should be configured as **Read** or **None** for sensitive repositories (`Evergreeners-web`, internal infra).
+* Write or triage access is granted on a per-team or per-repository basis (e.g. `welcome-seedlings`).
+
+---
+
+## 5. Phased Rollout Roadmap
+
+```text
+[ Phase 1: Foundation ]
+  ├── Generate GITHUB_ORG_ADMIN_TOKEN (Fine-grained PAT with Org Members Read/Write)
+  ├── Set Member Base Permissions in @evergreeners organization settings
+  └── Configure server environment secrets (Railway / local .env)
+
+[ Phase 2: welcome-seedlings Repository ]
+  ├── Create public repository evergreeners/welcome-seedlings
+  ├── Add README.md tutorial with Hack Club-style visual instructions
+  ├── Seed ASCII art templates in assets/templates/
+  └── Deploy .github/workflows/seedling-onboarding.yml auto-merge action
+
+[ Phase 3: Web App Integration ]
+  ├── Integrate Octokit invite logic in server/src/auth.ts (user.create.after)
+  ├── Expose GET /api/user/org-membership-status endpoint in Fastify
+  └── Mount <OrgInviteBanner /> in src/pages/Dashboard.tsx and Settings.tsx
+
+[ Phase 4: Gamification & Quests ]
+  ├── Wire quest verification for seedling PR merge in server/src/lib/github.ts
+  ├── Award "First Seedling" badge upon confirmed PR merge
+  └── Launch live Community Garden showcase page on evergreeners.dev
+```
+
+
