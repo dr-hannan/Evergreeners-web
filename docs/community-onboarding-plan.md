@@ -102,3 +102,244 @@ sequenceDiagram
     API->>DB: Award "First Seedling" Badge & initialize Streak
     API-->>Web: Gardener profile displays Badge & active Garden
 ```
+
+---
+
+## 3. Technical Implementation Specifications
+
+### A. Backend Org-Invite Pipeline (`server/src/auth.ts`)
+
+When a Gardener creates an account via GitHub OAuth, Better Auth triggers the `databaseHooks.user.create.after` lifecycle hook. We dispatch an invitation immediately.
+
+#### 1. Credential Configuration
+In `server/.env`:
+```env
+# Fine-grained PAT or GitHub App token with Organization Permissions:
+# - Members: Read and write
+# - Organization administration: Read-only
+GITHUB_ORG_ADMIN_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+GITHUB_COMMUNITY_ORG="evergreeners"
+```
+
+#### 2. Hook Implementation
+```typescript
+// server/src/auth.ts
+import { Octokit } from "octokit";
+
+const octokit = process.env.GITHUB_ORG_ADMIN_TOKEN
+    ? new Octokit({ auth: process.env.GITHUB_ORG_ADMIN_TOKEN })
+    : null;
+
+export const auth = betterAuth({
+    // ...existing config...
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    const isGithubConnected = !!(user as any).isGithubConnected;
+                    const username = (user as any).username;
+
+                    // 1. Fire-and-forget welcome email
+                    if (user.email) {
+                        sendWelcomeEmail(
+                            user.email,
+                            user.name || username || "Gardener",
+                            isGithubConnected
+                        ).catch(err => console.error("[Email] Welcome email failed:", err));
+                    }
+
+                    // 2. Automated GitHub Organization Invitation
+                    if (octokit && isGithubConnected && username) {
+                        try {
+                            const org = process.env.GITHUB_COMMUNITY_ORG || "evergreeners";
+                            await octokit.rest.orgs.setMembershipForUser({
+                                org,
+                                username,
+                                role: "member",
+                            });
+                            console.log(`[Org Invite] Sent invitation to ${username} for @${org}`);
+                        } catch (err: any) {
+                            // 422 indicates user is already a member or invited
+                            if (err.status === 422) {
+                                console.log(`[Org Invite] User ${username} already invited or member.`);
+                            } else {
+                                console.error(`[Org Invite] Failed to invite ${username}:`, err.message);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+});
+```
+
+---
+
+### B. The `evergreeners/welcome-seedlings` Repository
+
+Modelled directly on Hack Club’s `hackclub/dinosaurs`, this dedicated repository acts as the interactive proving ground.
+
+#### Repository Architecture
+```text
+evergreeners/welcome-seedlings/
+├── README.md                           # Tutorial & live gallery of seedlings
+├── seedlings/
+│   ├── .gitkeep
+│   ├── adams-404.md                    # Example seedling file
+│   └── <username>.md                   # New contributors add their file here
+├── assets/
+│   └── templates/
+│       ├── pine.txt                    # ASCII art tree options
+│       ├── oak.txt
+│       └── bonsai.txt
+└── .github/
+    └── workflows/
+        └── seedling-onboarding.yml     # Auto-validator and merge bot
+```
+
+#### Seedling File Format (`seedlings/<username>.md`)
+```markdown
+---
+gardener: "your-github-username"
+planted_at: "YYYY-MM-DD"
+tree_type: "Evergreen Pine"
+consistency_goal: "Code 30 minutes every day before work"
+favorite_stack: ["TypeScript", "React", "PostgreSQL"]
+---
+
+### 🌲 My Seedling
+
+\`\`\`
+       /\\
+      /  \\
+     / /\\ \\
+    / /  \\ \\
+   /_/ /\\ \\_\\
+     / /\\ \\
+    / /  \\ \\
+   /_/__\\_\\_\\
+      ||||
+      ||||
+\`\`\`
+
+> "Consistency is not about perfection; it is about persistence."
+```
+
+#### Automated Pull Request Workflow (`.github/workflows/seedling-onboarding.yml`)
+The repository contains an automated GitHub Action that enforces safety while providing instant validation and auto-merging:
+
+```yaml
+name: Seedling Onboarding Bot
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+    paths:
+      - 'seedlings/**.md'
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  validate-and-welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Validate PR Structure
+        id: check-files
+        run: |
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          EXPECTED_FILE="seedlings/${AUTHOR,,}.md"
+          
+          # Ensure PR only touches their own file
+          CHANGED_FILES=$(gh pr diff ${{ github.event.pull_request.number }} --name-only)
+          echo "Files changed: $CHANGED_FILES"
+          
+          for file in $CHANGED_FILES; do
+            if [[ "${file,,}" != "$EXPECTED_FILE" ]]; then
+              echo "Error: PR modifies unexpected file: $file"
+              exit 1
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Welcome Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const author = context.payload.pull_request.user.login;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: `🌱 Welcome to the Evergreeners garden, @${author}!\n\nYour seedling has taken root. Our bot is auto-merging your contribution now.`
+            });
+
+      - name: Auto-Merge
+        run: |
+          gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+---
+
+### C. Frontend In-App Invitation Banner
+
+GitHub invitations are not auto-accepted; users must accept them at `https://github.com/orgs/evergreeners/invitation`.
+
+To bridge the gap between signup and acceptance, the Evergreeners dashboard displays an actionable status banner:
+
+```tsx
+// src/components/OrgInviteBanner.tsx
+import React, { useEffect, useState } from "react";
+import { CheckCircle2, ArrowRight, TreePine, ExternalLink } from "lucide-react";
+
+export const OrgInviteBanner: React.FC<{ username: string }> = ({ username }) => {
+  const [membershipStatus, setMembershipStatus] = useState<"pending" | "active" | "unknown">("unknown");
+
+  useEffect(() => {
+    fetch(`/api/user/org-membership-status`)
+      .then(res => res.json())
+      .then(data => setMembershipStatus(data.status))
+      .catch(() => setMembershipStatus("unknown"));
+  }, []);
+
+  if (membershipStatus !== "pending") return null;
+
+  return (
+    <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-4 mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-emerald-500/10 rounded-lg text-emerald-400">
+          <TreePine className="w-5 h-5" />
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold text-emerald-100">
+            Join the Evergreeners GitHub Community
+          </h4>
+          <p className="text-xs text-emerald-300/80">
+            An invitation was sent to your GitHub account (@{username}). Accept it to showcase the Evergreeners badge!
+          </p>
+        </div>
+      </div>
+      <a
+        href="https://github.com/orgs/evergreeners/invitation"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
+      >
+        Accept Invitation
+        <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  );
+};
+```
+
