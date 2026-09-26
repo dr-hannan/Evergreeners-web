@@ -416,7 +416,7 @@ export default function Settings() {
         </section>
 
         {/* Organization Invitation Banner */}
-        <OrgInviteBanner username={username} />
+        <OrgInviteBanner username={githubUsername || (session?.user as { username?: string })?.username} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
