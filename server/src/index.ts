@@ -731,6 +731,52 @@ server.register(async (instance) => {
         });
     });
 
+    // POST /api/user/org-publicize — Tries to make the user's membership public on GitHub
+    instance.post('/api/user/org-publicize', async (req, reply) => {
+        const session = await getSessionFromRequest(req);
+        if (!session) {
+            return reply.status(401).send({ message: "Unauthorized" });
+        }
+
+        const [user] = await db.select().from(schema.users)
+            .where(eq(schema.users.id, session.session.userId))
+            .limit(1);
+
+        if (!user || !user.username) {
+            return reply.status(400).send({ message: "No GitHub username associated with this account" });
+        }
+
+        const [ghAccount] = await db.select()
+            .from(schema.accounts)
+            .where(and(eq(schema.accounts.userId, user.id), eq(schema.accounts.providerId, 'github')))
+            .limit(1);
+
+        if (!ghAccount?.accessToken) {
+            return reply.send({
+                success: false,
+                requiresManual: true,
+                message: "No GitHub token found. Please set your membership to Public directly on GitHub.",
+                peopleUrl: `https://github.com/orgs/${getCommunityOrg()}/people`
+            });
+        }
+
+        const pubRes = await publicizeMembership(user.username, ghAccount.accessToken);
+        if (pubRes.success) {
+            return reply.send({
+                success: true,
+                isPublicMember: true,
+                message: "Membership publicized successfully!"
+            });
+        } else {
+            return reply.send({
+                success: false,
+                requiresManual: true,
+                message: pubRes.message || "Failed to publicize automatically. Please toggle it on GitHub.",
+                peopleUrl: `https://github.com/orgs/${getCommunityOrg()}/people`
+            });
+        }
+    });
+
     // POST /api/user/invite-org — Explicitly triggers or re-triggers an org invitation
     instance.post('/api/user/invite-org', async (req, reply) => {
         const session = await getSessionFromRequest(req);
