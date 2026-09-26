@@ -6,6 +6,9 @@ import {
   inviteUserToOrg,
   ensureOrgMembership,
   clearMembershipCache,
+  checkIsPublicMember,
+  publicizeMembership,
+  attemptAutoAccept,
 } from "../../server/src/lib/org-invite.js";
 
 describe("GitHub Organization Invite Service", () => {
@@ -20,6 +23,7 @@ describe("GitHub Organization Invite Service", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.restoreAllMocks();
   });
 
   describe("Configuration helpers", () => {
@@ -69,6 +73,54 @@ describe("GitHub Organization Invite Service", () => {
     it("should allow clearing cache without errors", () => {
       expect(() => clearMembershipCache("someuser")).not.toThrow();
       expect(() => clearMembershipCache()).not.toThrow();
+    });
+  });
+
+  describe("checkIsPublicMember", () => {
+    it("should return true when GitHub returns 204", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
+      const isPublic = await checkIsPublicMember("octocat");
+      expect(isPublic).toBe(true);
+      fetchSpy.mockRestore();
+    });
+
+    it("should return false when GitHub returns 404", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response(null, { status: 404 }));
+      const isPublic = await checkIsPublicMember("octocat");
+      expect(isPublic).toBe(false);
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe("publicizeMembership", () => {
+    it("should return success true when GitHub returns 204", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response(null, { status: 204 }));
+      const res = await publicizeMembership("octocat", "gho_token");
+      expect(res.success).toBe(true);
+      fetchSpy.mockRestore();
+    });
+
+    it("should return success false when GitHub returns non-204", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
+      const res = await publicizeMembership("octocat", "gho_token");
+      expect(res.success).toBe(false);
+      fetchSpy.mockRestore();
+    });
+  });
+
+  describe("attemptAutoAccept", () => {
+    it("should return success true when status is 200", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ state: "active" }), { status: 200 }));
+      const res = await attemptAutoAccept("gho_token");
+      expect(res.success).toBe(true);
+      fetchSpy.mockRestore();
+    });
+
+    it("should return success false when status is 403", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
+      const res = await attemptAutoAccept("gho_token");
+      expect(res.success).toBe(false);
+      fetchSpy.mockRestore();
     });
   });
 });

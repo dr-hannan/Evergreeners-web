@@ -218,3 +218,84 @@ export async function inviteAllExistingUsers(): Promise<{
         details,
     };
 }
+
+/**
+ * Checks if a user is a PUBLIC member of the GitHub organization.
+ * Returns true if public (204 No Content), false if private or not a member (404).
+ */
+export async function checkIsPublicMember(username: string): Promise<boolean> {
+    const cleanUsername = username.trim().toLowerCase();
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/orgs/${org}/public_members/${cleanUsername}`, {
+            headers: {
+                "User-Agent": "Evergreeners-App",
+                "Accept": "application/vnd.github+json",
+            },
+        });
+        return res.status === 204;
+    } catch (err: any) {
+        console.error(`[Org Invite] Error checking public membership for ${cleanUsername}:`, err.message);
+        return false;
+    }
+}
+
+/**
+ * Attempts to make the user's membership public on GitHub using their personal OAuth accessToken.
+ * Only the authenticated user can publicize their own membership.
+ */
+export async function publicizeMembership(
+    username: string,
+    userAccessToken: string
+): Promise<{ success: boolean; message?: string }> {
+    const cleanUsername = username.trim().toLowerCase();
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/orgs/${org}/public_members/${cleanUsername}`, {
+            method: "PUT",
+            headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                "User-Agent": "Evergreeners-App",
+                Accept: "application/vnd.github+json",
+                "Content-Length": "0",
+            },
+        });
+        if (res.status === 204) {
+            console.log(`[Org Invite] Successfully publicized membership for @${cleanUsername} in @${org}`);
+            return { success: true };
+        }
+        const text = await res.text();
+        return { success: false, message: `GitHub API returned ${res.status}: ${text}` };
+    } catch (err: any) {
+        return { success: false, message: err.message };
+    }
+}
+
+/**
+ * Attempts to automatically accept the organization invitation using the user's OAuth accessToken.
+ * Requires user-level authorization (write:org).
+ */
+export async function attemptAutoAccept(
+    userAccessToken: string
+): Promise<{ success: boolean; message?: string }> {
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/user/memberships/orgs/${org}`, {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                "User-Agent": "Evergreeners-App",
+                Accept: "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ state: "active" }),
+        });
+        if (res.status === 200) {
+            console.log(`[Org Invite] Auto-accepted invitation for @${org}`);
+            return { success: true };
+        }
+        return { success: false, message: `Status ${res.status}` };
+    } catch (err: any) {
+        return { success: false, message: err.message };
+    }
+}
