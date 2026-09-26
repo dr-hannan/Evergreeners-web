@@ -31,6 +31,10 @@ import {
     ensureOrgMembership,
     inviteAllExistingUsers,
     getCommunityOrg,
+    checkIsPublicMember,
+    publicizeMembership,
+    attemptAutoAccept,
+    clearMembershipCache,
 } from './lib/org-invite.js';
 
 /**
@@ -677,19 +681,53 @@ server.register(async (instance) => {
                 status: "not_connected",
                 username: username || null,
                 org: getCommunityOrg(),
-                invitationUrl: `https://github.com/orgs/${getCommunityOrg()}/invitation`
+                isPublicMember: false,
+                invitationUrl: `https://github.com/orgs/${getCommunityOrg()}/invitation`,
+                peopleUrl: `https://github.com/orgs/${getCommunityOrg()}/people`
             });
         }
 
+        // Fetch user's GitHub access token if available to attempt auto-accept and auto-publicize
+        const [ghAccount] = await db.select()
+            .from(schema.accounts)
+            .where(and(eq(schema.accounts.userId, user.id), eq(schema.accounts.providerId, 'github')))
+            .limit(1);
+        const userAccessToken = ghAccount?.accessToken;
+
         // Check status and automatically invite if user has no pending or active membership
         const result = await ensureOrgMembership(username);
+        let status = result.status;
+
+        // If pending and we have a user access token, attempt auto-accepting
+        if (status === "pending" && userAccessToken) {
+            const acceptRes = await attemptAutoAccept(userAccessToken);
+            if (acceptRes.success) {
+                clearMembershipCache(username);
+                status = "active";
+            }
+        }
+
+        // If active, check if membership is public
+        let isPublicMember = false;
+        if (status === "active") {
+            isPublicMember = await checkIsPublicMember(username);
+            // If active but not public, attempt to auto-publicize using user's token
+            if (!isPublicMember && userAccessToken) {
+                const pubRes = await publicizeMembership(username, userAccessToken);
+                if (pubRes.success) {
+                    isPublicMember = true;
+                }
+            }
+        }
 
         return reply.send({
-            status: result.status,
+            status,
             username,
             org: getCommunityOrg(),
             invited: !!result.invited,
-            invitationUrl: `https://github.com/orgs/${getCommunityOrg()}/invitation`
+            isPublicMember,
+            invitationUrl: `https://github.com/orgs/${getCommunityOrg()}/invitation`,
+            peopleUrl: `https://github.com/orgs/${getCommunityOrg()}/people`
         });
     });
 
