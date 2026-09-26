@@ -299,3 +299,47 @@ export async function attemptAutoAccept(
         return { success: false, message: err.message };
     }
 }
+
+/**
+ * Ensures the GitHub organization webhook is registered for real-time membership events.
+ */
+export async function ensureOrgWebhook(webhookUrl?: string): Promise<{
+    success: boolean;
+    webhookId?: number;
+    created?: boolean;
+    message?: string;
+}> {
+    const octokit = getOrgAdminOctokit();
+    if (!octokit) {
+        return { success: false, message: "GITHUB_ORG_ADMIN_TOKEN not configured" };
+    }
+
+    const org = getCommunityOrg();
+    const targetUrl = webhookUrl || (process.env.APP_URL ? `${process.env.APP_URL}/api/webhooks/github` : "https://www.evergreeners.dev/api/webhooks/github");
+
+    try {
+        const existing = await octokit.rest.orgs.listWebhooks({ org });
+        const found = existing.data.find(h => h.config.url === targetUrl);
+
+        if (found) {
+            return { success: true, webhookId: found.id, created: false, message: "Webhook already exists" };
+        }
+
+        const res = await octokit.rest.orgs.createWebhook({
+            org,
+            name: "web",
+            active: true,
+            events: ["organization", "membership"],
+            config: {
+                url: targetUrl,
+                content_type: "json",
+            },
+        });
+
+        console.log(`[Org Webhook] Created webhook ${res.data.id} for @${org} pointing to ${targetUrl}`);
+        return { success: true, webhookId: res.data.id, created: true };
+    } catch (err: any) {
+        console.error(`[Org Webhook] Failed to ensure webhook for @${org}:`, err.message);
+        return { success: false, message: err.message };
+    }
+}
