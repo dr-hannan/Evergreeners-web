@@ -307,8 +307,12 @@ server.register(async (instance) => {
                         // Create in-app celebration notification
                         createNotification(
                             user.id,
-                            "🌲 Welcome to @evergreeners!",
-                            "You have officially joined the Evergreeners GitHub organization! Your seedling is now planted."
+                            {
+                                type: 'badge',
+                                title: "🌲 Welcome to @evergreeners!",
+                                message: "You have officially joined the Evergreeners GitHub organization! Your seedling is now planted.",
+                                link: '/profile',
+                            }
                         ).catch(err => console.error("[Org Webhook] Notification error:", err));
 
                         // Fetch account token to attempt automatic publicizing
