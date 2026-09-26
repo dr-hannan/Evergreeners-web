@@ -35,6 +35,7 @@ import {
     publicizeMembership,
     attemptAutoAccept,
     clearMembershipCache,
+    ensureOrgWebhook,
 } from './lib/org-invite.js';
 
 /**
@@ -274,9 +275,124 @@ server.register(async (instance) => {
 
 // API Routes Scope (Standard JSON Parsing)
 server.register(async (instance) => {
-    // GitHub Webhook Endpoint for real-time updates
+    // GitHub Webhook Endpoint for real-time updates (commits, org membership, academy events)
     instance.post('/api/webhooks/github', async (req, reply) => {
+        const event = (req.headers['x-github-event'] as string) || 'push';
         const payload = req.body as any;
+
+        // 1. Handle GitHub ping event
+        if (event === 'ping') {
+            return reply.status(200).send({ message: "pong", zen: payload?.zen });
+        }
+
+        // 2. Handle organization and membership events (e.g. user accepts invitation)
+        if (event === 'organization' || event === 'membership') {
+            const action = payload?.action;
+            const targetUsername = payload?.membership?.user?.login || payload?.member?.login || payload?.user?.login || payload?.sender?.login;
+
+            console.log(`[Org Webhook] Event '${event}.${action}' received for user: ${targetUsername}`);
+
+            if (targetUsername) {
+                clearMembershipCache(targetUsername);
+
+                if (action === 'member_added') {
+                    console.log(`[Org Webhook] 🎉 User @${targetUsername} has joined the organization!`);
+
+                    const [user] = await db.select()
+                        .from(schema.users)
+                        .where(eq(schema.users.username, targetUsername))
+                        .limit(1);
+
+                    if (user) {
+                        // Create in-app celebration notification
+                        createNotification(
+                            user.id,
+                            "🌲 Welcome to @evergreeners!",
+                            "You have officially joined the Evergreeners GitHub organization! Your seedling is now planted."
+                        ).catch(err => console.error("[Org Webhook] Notification error:", err));
+
+                        // Fetch account token to attempt automatic publicizing
+                        const [account] = await db.select()
+                            .from(schema.accounts)
+                            .where(and(eq(schema.accounts.userId, user.id), eq(schema.accounts.providerId, 'github')))
+                            .limit(1);
+
+                        if (account?.accessToken) {
+                            publicizeMembership(targetUsername, account.accessToken).catch(err =>
+                                console.error("[Org Webhook] Auto-publicize error:", err)
+                            );
+
+                            // Background sync contributions & check badges immediately
+                            (async () => {
+                                try {
+                                    const {
+                                        totalCommits, currentStreak, todayCommits, yesterdayCommits,
+                                        weeklyCommits, activeDays, totalProjects, projects,
+                                        contributionCalendar, totalPullRequests, languages
+                                    } = await getGithubContributions(targetUsername, account.accessToken!);
+
+                                    await db.update(schema.users)
+                                        .set({
+                                            streak: currentStreak,
+                                            totalCommits,
+                                            todayCommits,
+                                            yesterdayCommits,
+                                            weeklyCommits,
+                                            activeDays,
+                                            totalProjects,
+                                            projectsData: projects,
+                                            languages,
+                                            totalPullRequests,
+                                            contributionData: contributionCalendar,
+                                            updatedAt: new Date()
+                                        })
+                                        .where(eq(schema.users.id, user.id));
+
+                                    const stats: UserStats = {
+                                        totalCommits,
+                                        lateNightCommits: 0,
+                                        currentStreak,
+                                        longestStreak: Math.max(currentStreak, user.streak || 0),
+                                        hadBrokenStreak: false,
+                                        questsCompleted: 0,
+                                        questsAccepted: 0,
+                                        overachieverQuests: 0,
+                                        goalsCompleted: 0,
+                                        goalsCompletedEarly: 0,
+                                        accountAgeDays: Math.floor((Date.now() - new Date(user.createdAt).getTime()) / 86400000),
+                                        totalActiveDays: activeDays,
+                                        isFirstDay: false,
+                                        isProfilePublic: user.isPublic,
+                                        isGithubConnected: true,
+                                        hasBio: Boolean(user.bio),
+                                        hasLocation: Boolean(user.location),
+                                        leaderboardRank: user.bestRank || null,
+                                        profileViews: 0,
+                                        fullYearGreen: false,
+                                        isNewYearsCommit: false,
+                                        isLunchBreakCommit: false,
+                                        isFourAmCommit: false,
+                                        hasSpeedRunnerQuest: false,
+                                        isCountryLeader: false
+                                    };
+
+                                    const newBadges = await checkAndAwardBadges(user.id, stats);
+                                    if (newBadges.length > 0) {
+                                        console.log(`[Org Webhook] Awarded ${newBadges.length} new badges to @${targetUsername}:`, newBadges.map(b => b.name));
+                                    }
+                                } catch (err) {
+                                    console.error(`[Org Webhook] Background sync failed for @${targetUsername}:`, err);
+                                }
+                            })();
+                        }
+                    }
+                }
+            }
+
+            return reply.status(200).send({ message: `Org webhook processed: ${event}.${action}` });
+        }
+
+        // 3. Handle user commit/push events
         const githubUsername = payload?.sender?.login;
 
         if (!githubUsername) {
@@ -3199,6 +3315,18 @@ server.register(async (instance) => {
             } catch (error: any) {
                 console.error("[Admin Org Invite] Error during bulk invite:", error);
                 return reply.status(500).send({ message: error.message || "Failed to invite existing users" });
+            }
+        });
+
+        // POST /api/admin/org/setup-webhook — provisions or checks org webhook on GitHub
+        adminInstance.post('/api/admin/org/setup-webhook', async (req, reply) => {
+            try {
+                const body = req.body as any;
+                const result = await ensureOrgWebhook(body?.url);
+                return reply.send(result);
+            } catch (error: any) {
+                console.error("[Admin Webhook Setup] Error:", error);
+                return reply.status(500).send({ message: error.message || "Failed to setup org webhook" });
             }
         });
 
