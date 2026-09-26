@@ -9,6 +9,7 @@ import {
   checkIsPublicMember,
   publicizeMembership,
   attemptAutoAccept,
+  ensureOrgWebhook,
 } from "../../server/src/lib/org-invite.js";
 
 describe("GitHub Organization Invite Service", () => {
@@ -121,6 +122,14 @@ describe("GitHub Organization Invite Service", () => {
       const res = await attemptAutoAccept("gho_token");
       expect(res.success).toBe(false);
       fetchSpy.mockRestore();
+    });
+  });
+
+  describe("ensureOrgWebhook without admin token", () => {
+    it("should return success false when token is missing", async () => {
+      const res = await ensureOrgWebhook();
+      expect(res.success).toBe(false);
+      expect(res.message).toBe("GITHUB_ORG_ADMIN_TOKEN not configured");
     });
   });
 });
