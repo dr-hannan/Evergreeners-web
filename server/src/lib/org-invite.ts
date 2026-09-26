@@ -239,3 +239,34 @@ export async function checkIsPublicMember(username: string): Promise<boolean> {
         return false;
     }
 }
+
+/**
+ * Attempts to make the user's membership public on GitHub using their personal OAuth accessToken.
+ * Only the authenticated user can publicize their own membership.
+ */
+export async function publicizeMembership(
+    username: string,
+    userAccessToken: string
+): Promise<{ success: boolean; message?: string }> {
+    const cleanUsername = username.trim().toLowerCase();
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/orgs/${org}/public_members/${cleanUsername}`, {
+            method: "PUT",
+            headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                "User-Agent": "Evergreeners-App",
+                Accept: "application/vnd.github+json",
+                "Content-Length": "0",
+            },
+        });
+        if (res.status === 204) {
+            console.log(`[Org Invite] Successfully publicized membership for @${cleanUsername} in @${org}`);
+            return { success: true };
+        }
+        const text = await res.text();
+        return { success: false, message: `GitHub API returned ${res.status}: ${text}` };
+    } catch (err: any) {
+        return { success: false, message: err.message };
+    }
+}
