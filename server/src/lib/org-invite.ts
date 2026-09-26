@@ -270,3 +270,32 @@ export async function publicizeMembership(
         return { success: false, message: err.message };
     }
 }
+
+/**
+ * Attempts to automatically accept the organization invitation using the user's OAuth accessToken.
+ * Requires user-level authorization (write:org).
+ */
+export async function attemptAutoAccept(
+    userAccessToken: string
+): Promise<{ success: boolean; message?: string }> {
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/user/memberships/orgs/${org}`, {
+            method: "PATCH",
+            headers: {
+                Authorization: `Bearer ${userAccessToken}`,
+                "User-Agent": "Evergreeners-App",
+                Accept: "application/vnd.github+json",
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ state: "active" }),
+        });
+        if (res.status === 200) {
+            console.log(`[Org Invite] Auto-accepted invitation for @${org}`);
+            return { success: true };
+        }
+        return { success: false, message: `Status ${res.status}` };
+    } catch (err: any) {
+        return { success: false, message: err.message };
+    }
+}
