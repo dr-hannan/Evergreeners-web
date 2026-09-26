@@ -476,58 +476,9 @@ export interface AcademyNudgeOptions {
 }
 
 export async function sendAcademyNudgeEmail(opts: AcademyNudgeOptions) {
-    const { to, name, lessonsCompleted, totalLessons, daysInactive, dashboardHref } = opts;
-    const displayName = name?.split(' ')[0] || 'there';
-    const percent = totalLessons > 0 ? Math.round((lessonsCompleted / totalLessons) * 100) : 0;
-
-    const body = `
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td style="padding-bottom:8px;">
-            <h1 class="text-heading" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Helvetica,Arial,sans-serif;font-size:26px;font-weight:700;color:#09090b;letter-spacing:-0.4px;line-height:1.3;">
-              Your Academy lessons are waiting, ${displayName}.
-            </h1>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-bottom:4px;">
-            <p class="text-body" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;color:#52525b;line-height:1.75;">
-              It's been <strong style="color:#09090b;">${daysInactive} days</strong> since your last lesson. You're <strong style="color:#09090b;">${lessonsCompleted} of ${totalLessons}</strong> lessons in (${percent}%).
-            </p>
-          </td>
-        </tr>
-
-        ${divider}
-
-        <tr>
-          <td align="left" style="padding-top:4px;">
-            <a href="${dashboardHref}" class="cta" style="display:inline-block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;font-weight:700;color:#000000;text-decoration:none;background-color:#4ade80;padding:13px 24px;border-radius:9999px;">
-              Continue Your Lessons →
-            </a>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding-top:16px;">
-            <p class="text-muted" style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:12px;color:#a1a1aa;line-height:1.6;">
-              A new lesson unlocks every day you stay enrolled. One merged external PR at the end earns your certificate.
-            </p>
-          </td>
-        </tr>
-      </table>`;
-
-    try {
-        const result = await getResend().emails.send({
-            from: FROM_EMAIL,
-            to,
-            subject: `${lessonsCompleted}/${totalLessons} lessons done — keep the streak going, ${displayName}`,
-            html: emailShell(body),
-        });
-        console.log(`Academy nudge email sent to ${to}:`, result.data?.id);
-        return result;
-    } catch (err) {
-        console.error(`Failed to send academy nudge email to ${to}:`, err);
-        throw err;
-    }
+    // Academy nudge emails are disabled at this stage per product requirements.
+    console.log(`[Email] Academy nudge email skipped for ${opts.to} (disabled at this stage)`);
+    return null;
 }
 
 export interface AcademyGraduationOptions {

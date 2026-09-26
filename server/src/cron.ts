@@ -323,9 +323,9 @@ let dailyDigestSentDate: string | null = null;
         timezone: 'Africa/Lagos'
     });
 
-    // ── Academy nudge at 6 PM Nigerian time ────────────────────────────────────
-    // Enrolled, opted-in students who've been inactive for 3+ days get a
-    // gentle reminder (max once every 3 days).
+    // ── Academy nudge at 6 PM Nigerian time (DISABLED) ─────────────────────────
+    // Disabled at this stage per product requirements.
+    /*
     cron.schedule('0 18 * * *', async () => {
         console.log("Running academy nudge emails...");
 
@@ -389,6 +389,7 @@ let dailyDigestSentDate: string | null = null;
     }, {
         timezone: 'Africa/Lagos'
     });
+    */
 }
 
 
