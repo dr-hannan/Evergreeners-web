@@ -218,3 +218,24 @@ export async function inviteAllExistingUsers(): Promise<{
         details,
     };
 }
+
+/**
+ * Checks if a user is a PUBLIC member of the GitHub organization.
+ * Returns true if public (204 No Content), false if private or not a member (404).
+ */
+export async function checkIsPublicMember(username: string): Promise<boolean> {
+    const cleanUsername = username.trim().toLowerCase();
+    const org = getCommunityOrg();
+    try {
+        const res = await fetch(`https://api.github.com/orgs/${org}/public_members/${cleanUsername}`, {
+            headers: {
+                "User-Agent": "Evergreeners-App",
+                "Accept": "application/vnd.github+json",
+            },
+        });
+        return res.status === 204;
+    } catch (err: any) {
+        console.error(`[Org Invite] Error checking public membership for ${cleanUsername}:`, err.message);
+        return false;
+    }
+}
